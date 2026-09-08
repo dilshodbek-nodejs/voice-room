@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 import { STR } from '../content.js';
 import { config } from '../config.js';
 
-// NOTE(preview): 3-слойная ambient-волна + импульс + параллакс — чистый мок,
-// в реале волна строится из AudioContext-уровней локального микрофона.
+// Ambient-волна на входе — чисто декоративная (не уровень микрофона, не онлайн).
+// Реальный звук: VAD из webrtc.js уже внутри комнаты (RoomView).
 function AmbientCanvas({ active }) {
   const ref = useRef(null);
   const activeRef = useRef(active);
@@ -86,7 +86,7 @@ function AmbientCanvas({ active }) {
   return <canvas id="ambient" ref={ref} />;
 }
 
-export function JoinView({ roomLower, roomUpper, online, name, setName, onJoin }) {
+export function JoinView({ roomLower, roomUpper, name, setName, onJoin }) {
   return (
     <section id="view-join" className="view active">
       <div id="orb"></div>
@@ -134,7 +134,6 @@ export function JoinView({ roomLower, roomUpper, online, name, setName, onJoin }
           <div className="room-pill">
             КОМНАТА <b>#{roomLower}</b> · ИЗ ССЫЛКИ
           </div>
-          <div className="mono">{online} В СЕТИ</div>
         </div>
       </div>
       <footer className="mono">

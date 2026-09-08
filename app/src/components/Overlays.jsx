@@ -34,8 +34,7 @@ export function Controls({ micOn, unread, onMic, onChat, onEmoji, onLeave }) {
 }
 
 // ---------- чат: снизу-шторка (мобайл) / боковая панель (десктоп ≥900px) ----------
-// NOTE(preview): отправка локальная + мок-ответ. В реале: chat{text} по WS,
-// сервер ретранслирует комнате, истории нет (макс. последние 20 в памяти).
+// Отправка через WS, сервер ретранслирует комнате, в памяти только последние 20.
 export function ChatSheet({ open, roomUpper, msgs, onClose, onSend }) {
   const [draft, setDraft] = useState('');
   const listRef = useRef(null);
@@ -100,8 +99,7 @@ export function ChatSheet({ open, roomUpper, msgs, onClose, onSend }) {
 }
 
 // ---------- эмодзи-панель (не закрывается сама — можно тапать серией) ----------
-// NOTE(preview): локальный рендер. В реале: ws.send({t:'react',emoji}) → сервер
-// шлёт всем → у всех floatEmoji. Сервер enforced тот же лимит 10с (AGENTS.md §9).
+// Рендер только из broadcast сервера; лимит 10с enforced и клиентом, и сервером (AGENTS.md §9).
 export function EmojiPop({ open, counts, cooling, coolLeft, shakeN, onPick, onClose }) {
   const ref = useRef(null);
 

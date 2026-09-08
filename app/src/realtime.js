@@ -1,6 +1,4 @@
-// Клиент реального времени — готовая обвязка WS по спеке BACKEND_INTEGRATION.md.
-// Подключение: import { createRealtime } from './realtime.js'
-// В App.jsx заменить моки на колбэки. НЕ подключено автоматически (QA-фаза).
+// Клиент реального времени — WS по спеке BACKEND_INTEGRATION.md §2.
 
 export function createRealtime({ name, room, onMessage, onOpen, onClose }) {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';

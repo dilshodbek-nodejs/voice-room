@@ -23,17 +23,4 @@ export function TopBar({ roomLower, onShare }) {
   );
 }
 
-export function ViewSwitch({ view, onJoin, onRoom }) {
-  return (
-    <div className="view-switch">
-      <button id="swJoin" className={view === 'join' ? 'on' : ''} onClick={onJoin}>
-        01 ВХОД
-      </button>
-      <button id="swRoom" className={view === 'room' ? 'on' : ''} onClick={onRoom}>
-        02 КОМНАТА
-      </button>
-    </div>
-  );
-}
-
 export { STR };

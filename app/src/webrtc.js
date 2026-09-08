@@ -88,6 +88,13 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     }
     pc.ontrack = (e) => {
       const stream = e.streams[0] || new MediaStream([e.track]);
+      console.info('[voice-room] remote track', {
+        peerId,
+        kind: e.track.kind,
+        streamId: stream.id,
+        enabled: e.track.enabled,
+        muted: e.track.muted,
+      });
       remotes.set(peerId, stream);
       hookAnalyser(peerId, stream);
       emitStreams();
@@ -95,11 +102,29 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     pc.onicecandidate = (e) => {
       if (e.candidate) sendFn?.({ t: 'ice', to: peerId, candidate: e.candidate.toJSON() });
     };
-    pc.onconnectionstatechange = () => {
+    const reportState = () => {
+      console.info('[voice-room] peer state', {
+        peerId,
+        connection: pc.connectionState,
+        ice: pc.iceConnectionState,
+        gathering: pc.iceGatheringState,
+        signaling: pc.signalingState,
+      });
       onConnection?.(peerId, pc.connectionState);
       if (pc.connectionState === 'failed') {
         onError?.('СВЯЗЬ НЕ УСТАНОВЛЕНА · НУЖЕН TURN');
       }
+    };
+    pc.onconnectionstatechange = reportState;
+    pc.oniceconnectionstatechange = reportState;
+    pc.onicegatheringstatechange = reportState;
+    pc.onicecandidateerror = (e) => {
+      console.warn('[voice-room] ICE candidate error', {
+        peerId,
+        code: e.errorCode,
+        text: e.errorText,
+        url: e.url,
+      });
     };
     return pc;
   }

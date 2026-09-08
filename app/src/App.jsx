@@ -172,13 +172,8 @@ export default function App() {
               voice.setIce(msg.iceServers);
               setMembers([{ ...msg.you, you: true }, ...msg.peers]);
               setSpeaking([]);
-              // новичок: PC ко всем существующим (отвечает на их offers)
+              // Новичок только отвечает на offers (старые пиры офферят через peer-joined).
               voiceReadyRef.current?.then(() => voice.attachLocal());
-              for (const p of msg.peers) {
-                voiceReadyRef.current?.then(() => {
-                  // PC создаётся лениво при ответе на offer — здесь не офферим
-                });
-              }
               break;
             }
             case 'peer-joined': {
@@ -323,7 +318,7 @@ export default function App() {
     }
   }, [roomLower, roomUpper, showToast]);
 
-  // --- эмодзи: отправка ---
+  // --- эмодзи: отправка (единственный источник истины — broadcast сервера) ---
   const sendReact = useCallback(
     (ch) => {
       const left = Math.max(0, config.emojiCooldownMs - (Date.now() - lastReactAt));
@@ -335,12 +330,10 @@ export default function App() {
       }
       setLastReactAt(Date.now());
       setCoolLeft(config.emojiCooldownMs);
-      setCounts((prev) => ({ ...prev, [ch]: (prev[ch] || 0) + 1 }));
-      renderReaction(ch, (myName || 'Гость').toUpperCase());
       vibrate(20);
       rtRef.current?.react(ch);
     },
-    [lastReactAt, myName, showToast, renderReaction]
+    [lastReactAt, showToast]
   );
 
   const removeFloat = useCallback((id) => {
@@ -348,10 +341,8 @@ export default function App() {
   }, []);
 
   const tileDouble = useCallback(
-    (id) => {
+    () => {
       sendReact('❤️');
-      setSpeaking((s) => (s.includes(id) ? s : [...s, id]));
-      setTimeout(() => setSpeaking((s) => s.filter((x) => x !== id)), 800);
     },
     [sendReact]
   );
@@ -372,7 +363,6 @@ export default function App() {
           <JoinView
             roomLower={roomLower}
             roomUpper={roomUpper}
-            online={Math.max(1, members.length)}
             name={nameInput}
             setName={setNameInput}
             onJoin={doJoin}
@@ -450,8 +440,11 @@ function RemoteAudios({ streams }) {
         el.setAttribute('playsinline', '');
         el.autoplay = true;
         el.volume = 1;
+        el.onplaying = () => console.info('[voice-room] remote audio playing', id);
+        el.onerror = () => console.warn('[voice-room] remote audio error', id, el.error);
         el.play().catch(() => {
           // Mobile browsers may wait for the next user gesture; playAll handles it.
+          console.warn('[voice-room] remote audio playback blocked', id);
         });
       }
     }

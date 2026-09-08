@@ -1,6 +1,6 @@
 # VOICE ROOM — Архитектура бэкенда / фронтенда (спецификация интеграции)
 
-> Этот документ описывает, как текущий React-фронтенд (мок-версия) должен подключаться к реальному бэкенду. Все места, где сейчас используются мок-данные, помечены в коде комментариями `NOTE(preview):`.
+> Этот документ описывает, как React-фронтенд подключается к реальному бэкенду. Демо/мок-данные удалены: `src/mock.js` больше нет, ростер/чат/реакции/VAD идут только по WS.
 
 ---
 
@@ -78,27 +78,23 @@ interface RosterMessage {
 1. **Deterministic offers**: когда новый пир присоединяется, сервер шлёт `peer-joined` всем старым. **Только старые пиры** создают `offer` → новый получает N офферов, отвечает `answer` каждому. Это исключает glare.
 2. **ICE**: по умолчанию `stun:stun.l.google.com:19302`. TURN URL/credential берутся из ENV (`TURN_URL`, `TURN_USER`, `TURN_PASS`) и передаются клиенту в `roster.iceServers` (массив `RTCIceServer`).
 3. **Мут**: `track.enabled = false` — **без renegotiation**. Сервер не участвует.
-4. **Speaking detection**: в мок-версии фронтенд сам эмулирует (`setInterval` ротация). В продакшене:
+4. **Speaking detection**: клиентский VAD — каждый пир локально запускает `AudioContext + AnalyserNode` на своём исходящем треке (`src/webrtc.js`).
    - Вариант А (клиентский VAD): каждый пир локально запускает `AudioContext + AnalyserNode` на своём исходящем треке, шлёт `speaking` события по WS (троттлинг ~200мс).
    - Вариант Б (серверный VAD): сервер получает аудио через SFU/бот — сложнее, не для MVP.
    Рекомендую **А** — дешево, работает в mesh.
 
 ---
 
-## 5. Что сейчас мокнуто во фронтенде (файлы → что заменить)
+## 5. Что было мокнуто (удалено — теперь всё по WS)
 
-| Файл / хук | Что мокнуто | Что должен дать бэкенд |
-|------------|-------------|------------------------|
-| `src/hooks.js` → `useRoomCode` | Комната из `location.hash` | Тот же hash → `room` в `join` |
-| `src/mock.js` → `MOCK_ROSTER` | 11 фиктивных участников | `roster.peers` от сервера |
-| `src/mock.js` → `SPEAK_ORDER` | Ротация говорящих каждые 2.2с | `speaking` события по WS (VAD) |
-| `src/mock.js` → `latencyMs()` | Случайная задержка 28–68мс | `latency` события (RTT из пинга или WebRTC stats) |
-| `src/App.jsx` → `sendChat` | Локальный пуш + таймаут «хаха +1» | `chat` broadcast от сервера (все получают, отправитель — с `me: true`) |
-| `src/App.jsx` → `sendReact` | Локальный кулдаун, float/big/feed | `react` broadcast от сервера (сервер проверяет 10с лимит, отбрасывает лишние) |
-| `src/App.jsx` → `applyJoin` | localStorage + toast | `join` → сервер отвечает `roster` (или `error`) |
-| `src/App.jsx` → `leave` | Просто переключение view | `leave` + WS close → сервер шлёт `peer-left` остальным |
-
-**Все места в коде с `NOTE(preview):` — точки интеграции.**
+| Раньше (мок) | Теперь (реал) |
+|------------|-------------|
+| `MOCK_ROSTER` (11 фиктивных участников) | `roster.peers` от сервера |
+| Ротация говорящих каждые 2.2с | VAD из `webrtc.js` (локальный) |
+| Случайная задержка 28–68мс | RTT из `ping/pong` |
+| Локальный пуш чата + «хаха +1» | `chat` broadcast от сервера |
+| Локальный рендер реакций | `react` broadcast от сервера (лимит 10с enforced сервером) |
+| Переключение view без сети | `join` → `roster` / `leave` + WS close |
 
 ---
 
@@ -334,7 +330,6 @@ const { send } = useSocket(roomLower, {
 src/
 ├── config.js           # ENV-константы (roomDefault, emojiCooldownMs, …)
 ├── content.js          # Все строки RU + EMOJIS массив
-├── mock.js             # МОК-ДАННЫЕ (roster, speak order, latency) — УДАЛИТЬ ПРИ ПОДКЛЮЧЕНИИ БЭКА
 ├── hooks.js            # useRoomCode, useToast, vibrate
 ├── App.jsx             # ГЛАВНОЕ СОСТОЯНИЕ + интеграция WS (заменить моки на хендлеры)
 ├── components/
@@ -362,7 +357,7 @@ node server.js
 ## 15. Контакты / следующие шаги
 
 1. Реализовать `server.js` по §7 (≈150 строк).
-2. В `App.jsx` подключить `useSocket` и убрать импорт `mock.js`.
+2. Фронтенд уже подключён (`App.jsx` + `realtime.js` + `webrtc.js`, моков нет).
 3. Добавить `webrtc.js` с mesh-хелперами.
 4. Прогнать QA-чек-лист §12.
 5. Настроить TURN (coturn) и добавить в `.env`.

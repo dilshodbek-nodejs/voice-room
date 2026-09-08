@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-// NOTE(realtime): волна рисуется из реального RMS-уровня микрофонов (VAD из webrtc.js).
+// Волна рисуется из реального RMS-уровня микрофонов (VAD из webrtc.js).
 // Вертикальные бары: высота = базовая осцилляция × живая энергия 0..1.
 function WaveCanvas({ active, getEnergy }) {
   const ref = useRef(null);
