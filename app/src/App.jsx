@@ -180,6 +180,16 @@ export default function App() {
               voiceReadyRef.current?.then(() => voice.offerTo(msg.peer.id));
               break;
             }
+            // WebRTC сигналинг (relay с сервера) — БЕЗ ЭТОГО МЕШ НЕ СОБИРАЕТСЯ
+            case 'offer':
+              voiceReadyRef.current?.then(() => voice.handleOffer(msg));
+              break;
+            case 'answer':
+              voiceReadyRef.current?.then(() => voice.handleAnswer(msg));
+              break;
+            case 'ice':
+              voice.handleIce(msg); // ранние кандидаты буферизуются внутри (pendingIce)
+              break;
             case 'peer-left': {
               setMembers((prev) => prev.filter((m) => m.id !== msg.peerId));
               voice.closePeer(msg.peerId);
