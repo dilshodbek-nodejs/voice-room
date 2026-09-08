@@ -28,7 +28,6 @@ export default function App() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [popOpen, setPopOpen] = useState(false);
   const [latency, setLatency] = useState(0);
-  const [remoteStreams, setRemoteStreams] = useState(() => new Map());
 
   const rtRef = useRef(null);
   const voiceRef = useRef(null);
@@ -112,7 +111,6 @@ export default function App() {
     setConnected(false);
     setMembers([]);
     setSpeaking([]);
-    setRemoteStreams(new Map());
     setLatency(0);
   }, []);
 
@@ -131,7 +129,6 @@ export default function App() {
       teardown();
 
       const voice = createVoice({
-        onStreams: (map) => setRemoteStreams(map),
         onSpeaking: (ids) => setSpeaking(ids.filter((id) => !mutedIdsRef.current.has(id))),
         onEnergy: (e) => (energyRef.current = e),
         onError: (m) => showToast(m),
@@ -419,58 +416,6 @@ export default function App() {
       />
       <FxLayer floats={floats} onRemoveFloat={removeFloat} big={big} feed={feed} />
       <ConfirmLeave open={confirmOpen} onStay={() => setConfirmOpen(false)} onLeave={leave} />
-      <RemoteAudios streams={remoteStreams} />
     </>
-  );
-}
-
-// Скрытые <audio> для голоса остальных пиров.
-function RemoteAudios({ streams }) {
-  const refs = useRef(new Map());
-
-  const playAll = useCallback(() => {
-    for (const el of refs.current.values()) el?.play().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    document.addEventListener('pointerdown', playAll, { passive: true });
-    document.addEventListener('touchstart', playAll, { passive: true });
-    return () => {
-      document.removeEventListener('pointerdown', playAll);
-      document.removeEventListener('touchstart', playAll);
-    };
-  }, [playAll]);
-
-  useEffect(() => {
-    for (const [id, stream] of streams) {
-      const el = refs.current.get(id);
-      if (el && el.srcObject !== stream) {
-        el.srcObject = stream;
-        el.setAttribute('playsinline', '');
-        el.autoplay = true;
-        el.volume = 1;
-        el.onplaying = () => console.info('[voice-room] remote audio playing', id);
-        el.onerror = () => console.warn('[voice-room] remote audio error', id, el.error);
-        el.play().catch(() => {
-          // Mobile browsers may wait for the next user gesture; playAll handles it.
-          console.warn('[voice-room] remote audio playback blocked', id);
-        });
-      }
-    }
-  }, [streams]);
-  return (
-    <div className="remote-audios" aria-hidden="true">
-      {[...streams.keys()].map((id) => (
-        <audio
-          key={id}
-          ref={(el) => {
-            if (el) refs.current.set(id, el);
-            else refs.current.delete(id);
-          }}
-          autoPlay
-          playsInline
-        />
-      ))}
-    </div>
   );
 }

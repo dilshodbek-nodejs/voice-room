@@ -5,6 +5,7 @@
 const ENTER_TH = 0.05; // порог входа в speaking
 const EXIT_TH = 0.03;  // порог выхода (гистерезис)
 const TICK_MS = 120;
+const REMOTE_GAIN = 1.8; // усиление тихих удалённых микрофонов без ручного клиппинга
 
 export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnection }) {
   let audioCtx = null;
@@ -19,6 +20,7 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
   const pcs = new Map();      // peerId -> RTCPeerConnection
   const remotes = new Map();  // peerId -> MediaStream
   const nodes = new Map();    // 'local'|peerId -> {src, an, buf}
+  const remoteAudio = new Map(); // peerId -> {gain, compressor}
   const levels = new Map();   // id -> smoothed 0..1
   const speakingSet = new Set();
   const pendingIce = new Map(); // peerId -> [candidates]
@@ -32,19 +34,23 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
   }
 
   function hookAnalyser(key, stream) {
-    if (nodes.has(key)) return;
+    if (nodes.has(key)) return nodes.get(key);
     const ctx = ensureCtx();
     const src = ctx.createMediaStreamSource(stream);
     const an = ctx.createAnalyser();
     an.fftSize = 512;
     src.connect(an); // в destination НЕ подключаем — иначе эхо
-    nodes.set(key, { src, an, buf: new Uint8Array(an.fftSize) });
+    const node = { src, an, buf: new Uint8Array(an.fftSize) };
+    nodes.set(key, node);
+    return node;
   }
 
   async function init() {
     // iOS/Android: AudioContext живёт только после жеста — страховка от suspend
     const unlock = () => ensureCtx();
     document.addEventListener('pointerdown', unlock, { once: true });
+    // Создаём контекст до await getUserMedia, пока join-клик ещё является user gesture.
+    ensureCtx();
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -97,7 +103,23 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
         muted: e.track.muted,
       });
       remotes.set(peerId, stream);
-      hookAnalyser(peerId, stream);
+      const analyserNode = hookAnalyser(peerId, stream);
+      const previous = remoteAudio.get(peerId);
+      if (previous) {
+        try { analyserNode.src.disconnect(previous.gain); } catch (_) {}
+        try { previous.gain.disconnect(); } catch (_) {}
+        try { previous.compressor.disconnect(); } catch (_) {}
+      }
+      const gain = ensureCtx().createGain();
+      gain.gain.value = REMOTE_GAIN;
+      const compressor = ensureCtx().createDynamicsCompressor();
+      compressor.threshold.value = -18;
+      compressor.knee.value = 18;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
+      analyserNode.src.connect(gain).connect(compressor).connect(ensureCtx().destination);
+      remoteAudio.set(peerId, { gain, compressor });
       emitStreams();
     };
     pc.onicecandidate = (e) => {
@@ -258,6 +280,12 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     remotes.delete(peerId);
     const n = nodes.get(peerId);
     if (n) { try { n.src.disconnect(); } catch (_) {} nodes.delete(peerId); }
+    const audio = remoteAudio.get(peerId);
+    if (audio) {
+      try { audio.gain.disconnect(); } catch (_) {}
+      try { audio.compressor.disconnect(); } catch (_) {}
+      remoteAudio.delete(peerId);
+    }
     levels.delete(peerId);
     speakingSet.delete(peerId);
     emitStreams();
@@ -274,6 +302,11 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     localMuted = false;
     for (const n of nodes.values()) { try { n.src.disconnect(); } catch (_) {} }
     nodes.clear();
+    for (const audio of remoteAudio.values()) {
+      try { audio.gain.disconnect(); } catch (_) {}
+      try { audio.compressor.disconnect(); } catch (_) {}
+    }
+    remoteAudio.clear();
     remotes.clear();
     speakingSet.clear();
     try { audioCtx?.close(); } catch (_) {}
