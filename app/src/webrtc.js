@@ -6,7 +6,7 @@ const ENTER_TH = 0.05; // порог входа в speaking
 const EXIT_TH = 0.03;  // порог выхода (гистерезис)
 const TICK_MS = 120;
 
-export function createVoice({ onStreams, onSpeaking, onEnergy, onError }) {
+export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnection }) {
   let audioCtx = null;
   let localStream = null;
   let meId = 'me';
@@ -62,10 +62,16 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError }) {
   function replaceLocalTracks(pc) {
     if (!localStream || !pc.senders) return;
     const tracks = localStream.getAudioTracks();
-    const senders = pc.getSenders().filter((s) => s.track && s.track.kind === 'audio');
     tracks.forEach((t, i) => {
-      if (senders[i]) senders[i].replaceTrack(t).catch(() => {});
-      else pc.addTrack(t, localStream);
+      const transceiver = pc.getTransceivers().find(
+        (item) => item.receiver?.track?.kind === 'audio' && !item.sender.track
+      );
+      if (transceiver) {
+        transceiver.sender.replaceTrack(t).catch(() => {});
+        transceiver.direction = 'sendrecv';
+      } else if (!pc.getSenders().some((sender) => sender.track === t)) {
+        pc.addTrack(t, localStream);
+      }
     });
   }
 
@@ -74,14 +80,26 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError }) {
     if (pc) return pc;
     pc = new RTCPeerConnection({ iceServers: ice });
     pcs.set(peerId, pc);
-    if (localStream) localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+    if (localStream) {
+      localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+    } else {
+      // A listener without microphone must still negotiate a receive-only audio section.
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
     pc.ontrack = (e) => {
-      remotes.set(peerId, e.streams[0]);
-      hookAnalyser(peerId, e.streams[0]);
+      const stream = e.streams[0] || new MediaStream([e.track]);
+      remotes.set(peerId, stream);
+      hookAnalyser(peerId, stream);
       emitStreams();
     };
     pc.onicecandidate = (e) => {
       if (e.candidate) sendFn?.({ t: 'ice', to: peerId, candidate: e.candidate.toJSON() });
+    };
+    pc.onconnectionstatechange = () => {
+      onConnection?.(peerId, pc.connectionState);
+      if (pc.connectionState === 'failed') {
+        onError?.('СВЯЗЬ НЕ УСТАНОВЛЕНА · НУЖЕН TURN');
+      }
     };
     return pc;
   }
@@ -114,8 +132,14 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError }) {
   }
 
   function handleIce(msg) {
+    if (!msg.candidate) return;
     const pc = pcs.get(msg.from);
-    if (!pc || !msg.candidate) return;
+    // ICE может прийти раньше offer из-за async setLocalDescription.
+    if (!pc) {
+      if (!pendingIce.has(msg.from)) pendingIce.set(msg.from, []);
+      pendingIce.get(msg.from).push(msg.candidate);
+      return;
+    }
     if (!pc.remoteDescription) {
       if (!pendingIce.has(msg.from)) pendingIce.set(msg.from, []);
       pendingIce.get(msg.from).push(msg.candidate);

@@ -36,9 +36,10 @@ try {
 // ---------- ICE из ENV ----------
 function iceServers() {
   const list = [{ urls: process.env.STUN_URL || 'stun:stun.l.google.com:19302' }];
-  if (process.env.TURN_URL) {
+  const turnUrls = [process.env.TURN_URL, process.env.TURN_URL_TCP].filter(Boolean);
+  if (turnUrls.length) {
     list.push({
-      urls: process.env.TURN_URL,
+      urls: turnUrls,
       username: process.env.TURN_USER || undefined,
       credential: process.env.TURN_PASS || undefined,
     });

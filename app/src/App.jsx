@@ -134,6 +134,14 @@ export default function App() {
         onSpeaking: (ids) => setSpeaking(ids),
         onEnergy: (e) => (energyRef.current = e),
         onError: (m) => showToast(m),
+        onConnection: (peerId, state) => {
+          if (state === 'connected') {
+            showToast('ГОЛОСОВАЯ СВЯЗЬ УСТАНОВЛЕНА');
+          }
+          if (state === 'disconnected') {
+            showToast('СВЯЗЬ ПРЕРВАНА · ПЕРЕПОДКЛЮЧЕНИЕ');
+          }
+        },
       });
       voiceRef.current = voice;
       voice.setSend((obj) => rtRef.current?.send(obj));
@@ -420,25 +428,46 @@ export default function App() {
 // Скрытые <audio> для голоса остальных пиров.
 function RemoteAudios({ streams }) {
   const refs = useRef(new Map());
+
+  const playAll = useCallback(() => {
+    for (const el of refs.current.values()) el?.play().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('pointerdown', playAll, { passive: true });
+    document.addEventListener('touchstart', playAll, { passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', playAll);
+      document.removeEventListener('touchstart', playAll);
+    };
+  }, [playAll]);
+
   useEffect(() => {
     for (const [id, stream] of streams) {
       const el = refs.current.get(id);
       if (el && el.srcObject !== stream) {
         el.srcObject = stream;
+        el.setAttribute('playsinline', '');
+        el.autoplay = true;
+        el.volume = 1;
         el.play().catch(() => {
-          const resume = () => {
-            el.play().catch(() => {});
-            document.removeEventListener('pointerdown', resume);
-          };
-          document.addEventListener('pointerdown', resume, { once: true });
+          // Mobile browsers may wait for the next user gesture; playAll handles it.
         });
       }
     }
   }, [streams]);
   return (
-    <div hidden aria-hidden="true">
+    <div className="remote-audios" aria-hidden="true">
       {[...streams.keys()].map((id) => (
-        <audio key={id} ref={(el) => refs.current.set(id, el)} autoPlay playsInline />
+        <audio
+          key={id}
+          ref={(el) => {
+            if (el) refs.current.set(id, el);
+            else refs.current.delete(id);
+          }}
+          autoPlay
+          playsInline
+        />
       ))}
     </div>
   );

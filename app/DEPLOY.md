@@ -10,6 +10,7 @@ bash scripts/setup-vps.sh --nginx   # node20 + pm2 + build + запуск + ngin
 - без `--nginx` — приложение само слушает `:2021` (бэк+статика); dev-фронт Vite — `:2020`
 - `--nginx` — прокси на 80-м порту с апгрейдом WebSocket + подсказка по certbot (HTTPS)
 - TURN для строгих NAT: впиши `TURN_URL/USER/PASS` в `server/.env`, затем `pm2 reload voice-room`
+- Для PC↔мобильных сетей установи TURN на этом VPS: `bash scripts/setup-turn.sh`
 
 ## Обновления (на сервере)
 
