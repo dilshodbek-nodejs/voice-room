@@ -170,6 +170,7 @@ export default function App() {
               voice.setIce(msg.iceServers);
               const roster = [{ ...msg.you, you: true }, ...msg.peers];
               mutedIdsRef.current = new Set(roster.filter((m) => m.muted).map((m) => m.id));
+              roster.forEach((m) => voice.setPeerMuted(m.id, !!m.muted));
               setMembers(roster);
               setSpeaking([]);
               // Новичок только отвечает на offers (старые пиры офферят через peer-joined).
@@ -178,6 +179,8 @@ export default function App() {
             }
             case 'peer-joined': {
               setMembers((prev) => [...prev, msg.peer]);
+              voice.setPeerMuted(msg.peer.id, !!msg.peer.muted);
+              if (msg.peer.muted) mutedIdsRef.current.add(msg.peer.id);
               showToast('ПРИСОЕДИНИЛСЯ · ' + (msg.peer.name || '').toUpperCase());
               // старый пир → офферим новичку (deterministic)
               voiceReadyRef.current?.then(() => voice.offerTo(msg.peer.id));
@@ -201,6 +204,7 @@ export default function App() {
             case 'peer-state':
               if (msg.muted) mutedIdsRef.current.add(msg.peerId);
               else mutedIdsRef.current.delete(msg.peerId);
+              voice.setPeerMuted(msg.peerId, msg.muted);
               setMembers((prev) =>
                 prev.map((m) => (m.id === msg.peerId ? { ...m, muted: msg.muted } : m))
               );

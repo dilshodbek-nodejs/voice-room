@@ -23,6 +23,7 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
   const remoteAudio = new Map(); // peerId -> {gain, compressor}
   const levels = new Map();   // id -> smoothed 0..1
   const speakingSet = new Set();
+  const mutedPeers = new Set();
   const pendingIce = new Map(); // peerId -> [candidates]
 
   const emitStreams = () => onStreams?.(new Map(remotes));
@@ -229,6 +230,11 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
         speakingSet.delete(meId);
         continue;
       }
+      if (key !== 'local' && mutedPeers.has(key)) {
+        levels.set(key, 0);
+        speakingSet.delete(key);
+        continue;
+      }
       if (!nodes.get(key).an) continue;
       const lvl = rms(key);
       const smooth = Math.max(lvl * 3.5, (levels.get(key) || 0) * 0.72); // decay для волны
@@ -274,6 +280,16 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     return true;
   }
 
+  function setPeerMuted(peerId, muted) {
+    if (muted) mutedPeers.add(peerId);
+    else mutedPeers.delete(peerId);
+    if (muted) {
+      levels.set(peerId, 0);
+      speakingSet.delete(peerId);
+      onSpeaking?.([...speakingSet]);
+    }
+  }
+
   function closePeer(peerId) {
     pcs.get(peerId)?.close();
     pcs.delete(peerId);
@@ -288,6 +304,7 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     }
     levels.delete(peerId);
     speakingSet.delete(peerId);
+    mutedPeers.delete(peerId);
     emitStreams();
   }
 
@@ -309,13 +326,14 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     remoteAudio.clear();
     remotes.clear();
     speakingSet.clear();
+    mutedPeers.clear();
     try { audioCtx?.close(); } catch (_) {}
     audioCtx = null;
   }
 
   return {
     init, attachLocal, offerTo, handleOffer, handleAnswer, handleIce, closePeer, destroy,
-    setSend, setMeId, setIce, toggleMute,
+    setSend, setMeId, setIce, toggleMute, setPeerMuted,
     get speaking() { return [...speakingSet]; },
     get energy() { return Math.min(1, Math.max(...[0, ...levels.values()])); },
   };
