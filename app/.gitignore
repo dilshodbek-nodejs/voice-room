@@ -1,0 +1,28 @@
+# deps
+node_modules/
+
+# build
+dist/
+
+# env / secrets
+.env
+server/.env
+*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# pm2
+.pm2/
+
+# os / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# misc test artifacts
+resp.html
