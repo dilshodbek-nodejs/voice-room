@@ -118,6 +118,8 @@ export function JoinView({ roomLower, roomUpper, name, setName, onJoin }) {
           <input
             id="name"
             maxLength={config.maxNameLen}
+            required
+            aria-required="true"
             placeholder={STR.namePlaceholder}
             autoComplete="off"
             value={name}

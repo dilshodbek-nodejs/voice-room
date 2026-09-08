@@ -36,6 +36,12 @@ export default function App() {
   const energyRef = useRef(0);
   const mutedIdsRef = useRef(new Set());
   const chatOpenRef = useRef(false);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptRef = useRef(0);
+  const sessionTokenRef = useRef(0);
+  const sessionNameRef = useRef('');
+  const intentionalCloseRef = useRef(false);
+  const startSessionRef = useRef(null);
   chatOpenRef.current = chatOpen;
 
   const nameById = useMemo(() => {
@@ -103,6 +109,8 @@ export default function App() {
 
   // --- teardown ---
   const teardown = useCallback(() => {
+    clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = null;
     voiceRef.current?.destroy();
     voiceRef.current = null;
     if (rtRef.current?.pingLoop) clearInterval(rtRef.current.pingLoop);
@@ -116,6 +124,9 @@ export default function App() {
 
   useEffect(
     () => () => {
+      intentionalCloseRef.current = true;
+      sessionTokenRef.current += 1;
+      clearTimeout(reconnectTimerRef.current);
       voiceRef.current?.destroy();
       if (rtRef.current?.pingLoop) clearInterval(rtRef.current.pingLoop);
       rtRef.current?.close();
@@ -126,6 +137,10 @@ export default function App() {
   // --- realtime + voice: старт после «ВОЙТИ» (жест пользователя → можно getUserMedia) ---
   const startSession = useCallback(
     (name) => {
+      const token = ++sessionTokenRef.current;
+      sessionNameRef.current = name;
+      intentionalCloseRef.current = false;
+      clearTimeout(reconnectTimerRef.current);
       teardown();
 
       const voice = createVoice({
@@ -154,13 +169,27 @@ export default function App() {
         name,
         room: roomLower,
         onOpen: (rt) => {
+          if (token !== sessionTokenRef.current) return;
+          reconnectAttemptRef.current = 0;
           setConnected(true);
           showToast('ПОДКЛЮЧЁН · ' + roomUpper);
           rt.pingLoop = setInterval(() => rt.send({ t: 'ping', ts: Date.now() }), 3000);
         },
         onClose: () => {
-          if (viewRef.current === 'room') showToast('СОЕДИНЕНИЕ ПОТЕРЯНО · ПЕРЕЗАХОДИ');
+          if (token !== sessionTokenRef.current || intentionalCloseRef.current) return;
           setConnected(false);
+          if (viewRef.current !== 'room' || !sessionNameRef.current) return;
+
+          const attempt = Math.min(reconnectAttemptRef.current + 1, 6);
+          reconnectAttemptRef.current = attempt;
+          const delay = Math.min(1000 * 2 ** (attempt - 1), 10000);
+          showToast('СОЕДИНЕНИЕ ПОТЕРЯНО · ПОВТОР ЧЕРЕЗ ' + Math.ceil(delay / 1000) + 'С');
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = setTimeout(() => {
+            if (!intentionalCloseRef.current && viewRef.current === 'room') {
+              startSessionRef.current?.(sessionNameRef.current);
+            }
+          }, delay);
         },
         onMessage: (msg) => {
           switch (msg.t) {
@@ -244,6 +273,8 @@ export default function App() {
     [roomLower, roomUpper, showToast, renderReaction, teardown]
   );
 
+  startSessionRef.current = startSession;
+
   const viewRef = useRef(view);
   viewRef.current = view;
 
@@ -253,12 +284,13 @@ export default function App() {
     if (joiningRef.current || viewRef.current === 'room') return;
     joiningRef.current = true;
     const raw = nameInput.trim();
-    let finalName = raw;
     if (!raw) {
-      finalName = 'Гость-' + Math.floor(1000 + Math.random() * 9000);
-    } else {
-      localStorage.setItem(config.storageKey, raw);
+      joiningRef.current = false;
+      showToast('ВВЕДИ ИМЯ ДЛЯ ВХОДА');
+      return;
     }
+    const finalName = raw;
+    localStorage.setItem(config.storageKey, raw);
     setMyName(finalName);
     setMsgs([]);
     setUnread(0);
@@ -292,6 +324,9 @@ export default function App() {
   const leave = useCallback(() => {
     setConfirmOpen(false);
     joiningRef.current = false;
+    intentionalCloseRef.current = true;
+    sessionTokenRef.current += 1;
+    clearTimeout(reconnectTimerRef.current);
     rtRef.current?.leave();
     teardown();
     setView('join');
