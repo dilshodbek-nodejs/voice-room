@@ -35,6 +35,7 @@ export default function App() {
   const meIdRef = useRef(null);
   const voiceReadyRef = useRef(null);
   const energyRef = useRef(0);
+  const mutedIdsRef = useRef(new Set());
   const chatOpenRef = useRef(false);
   chatOpenRef.current = chatOpen;
 
@@ -131,7 +132,7 @@ export default function App() {
 
       const voice = createVoice({
         onStreams: (map) => setRemoteStreams(map),
-        onSpeaking: (ids) => setSpeaking(ids),
+        onSpeaking: (ids) => setSpeaking(ids.filter((id) => !mutedIdsRef.current.has(id))),
         onEnergy: (e) => (energyRef.current = e),
         onError: (m) => showToast(m),
         onConnection: (peerId, state) => {
@@ -170,7 +171,9 @@ export default function App() {
               meIdRef.current = msg.you.id;
               voice.setMeId(msg.you.id);
               voice.setIce(msg.iceServers);
-              setMembers([{ ...msg.you, you: true }, ...msg.peers]);
+              const roster = [{ ...msg.you, you: true }, ...msg.peers];
+              mutedIdsRef.current = new Set(roster.filter((m) => m.muted).map((m) => m.id));
+              setMembers(roster);
               setSpeaking([]);
               // Новичок только отвечает на offers (старые пиры офферят через peer-joined).
               voiceReadyRef.current?.then(() => voice.attachLocal());
@@ -199,9 +202,12 @@ export default function App() {
               break;
             }
             case 'peer-state':
+              if (msg.muted) mutedIdsRef.current.add(msg.peerId);
+              else mutedIdsRef.current.delete(msg.peerId);
               setMembers((prev) =>
                 prev.map((m) => (m.id === msg.peerId ? { ...m, muted: msg.muted } : m))
               );
+              if (msg.muted) setSpeaking((prev) => prev.filter((id) => id !== msg.peerId));
               break;
             case 'chat': {
               const label = (msg.fromName || 'ГОСТЬ').toUpperCase() + ' · СЕЙЧАС';
@@ -266,7 +272,8 @@ export default function App() {
   const toggleMic = useCallback(() => {
     if (!voiceRef.current) return;
     const next = !micOnRef.current;
-    const ok = voiceRef.current.toggleMute(next);
+    const muted = !next;
+    const ok = voiceRef.current.toggleMute(muted);
     if (!ok) {
       showToast('НЕТ МИКРОФОНА');
       return;
@@ -274,8 +281,10 @@ export default function App() {
     micOnRef.current = next;
     setMicOn(next);
     showToast(next ? 'МИК ВКЛ' : 'МИК ВЫКЛ');
-    rtRef.current?.state(!next); // бейдж у остальных через peer-state
-    setMembers((prev) => prev.map((m) => (m.id === meIdRef.current ? { ...m, muted: !next } : m)));
+    if (muted) mutedIdsRef.current.add(meIdRef.current);
+    else mutedIdsRef.current.delete(meIdRef.current);
+    rtRef.current?.state(muted); // бейдж у остальных через peer-state
+    setMembers((prev) => prev.map((m) => (m.id === meIdRef.current ? { ...m, muted } : m)));
   }, [showToast]);
 
   // --- выход ---

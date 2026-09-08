@@ -13,6 +13,7 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
   let sendFn = null;
   let timer = null;
   let destroyed = false;
+  let localMuted = false;
 
   let ice = [{ urls: 'stun:stun.l.google.com:19302' }];
   const pcs = new Map();      // peerId -> RTCPeerConnection
@@ -201,6 +202,11 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     if (destroyed) return;
     let energy = 0;
     for (const key of nodes.keys()) {
+      if (key === 'local' && localMuted) {
+        levels.set('local', 0);
+        speakingSet.delete(meId);
+        continue;
+      }
       if (!nodes.get(key).an) continue;
       const lvl = rms(key);
       const smooth = Math.max(lvl * 3.5, (levels.get(key) || 0) * 0.72); // decay для волны
@@ -235,8 +241,14 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
   function setIce(servers) { if (Array.isArray(servers) && servers.length) ice = servers; }
 
   function toggleMute(muted) {
+    localMuted = muted;
     if (!localStream) return false;
     localStream.getAudioTracks().forEach((t) => (t.enabled = !muted));
+    if (muted) {
+      levels.set('local', 0);
+      speakingSet.delete(meId);
+      onSpeaking?.([...speakingSet]);
+    }
     return true;
   }
 
@@ -259,6 +271,7 @@ export function createVoice({ onStreams, onSpeaking, onEnergy, onError, onConnec
     pcs.clear();
     localStream?.getTracks().forEach((t) => t.stop());
     localStream = null;
+    localMuted = false;
     for (const n of nodes.values()) { try { n.src.disconnect(); } catch (_) {} }
     nodes.clear();
     remotes.clear();
