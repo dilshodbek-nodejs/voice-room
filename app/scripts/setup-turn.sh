@@ -18,6 +18,7 @@ echo "==> конфигурирую coturn для ${PUBLIC_IP}"
 sudo tee /etc/turnserver.conf >/dev/null <<CONF
 listening-port=3478
 listening-ip=${PUBLIC_IP}
+relay-ip=${PUBLIC_IP}
 external-ip=${PUBLIC_IP}
 realm=${REALM}
 server-name=${REALM}
