@@ -49,7 +49,7 @@ server {
     server_name _;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:2021;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;      # обязательно для /ws
         proxy_set_header Connection "upgrade";
@@ -68,7 +68,7 @@ fi
 
 cat <<'EOF'
 
-ГОТОВО. Приложение на http://<IP_СЕРВЕРА>:3000
+ГОТОВО. Приложение на http://<IP_СЕРВЕРА> (nginx 80 → 2021; напрямую: http://<IP_СЕРВЕРА>:2021)
   pm2 status        — статус
   pm2 logs voice-room — логи
   pm2 monit         — мониторинг
