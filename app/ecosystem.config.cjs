@@ -1,13 +1,14 @@
-// PM2: авто-рестарт, лимит памяти, прод-ENV. Запуск: pm2 start ecosystem.config.cjs
+// PM2: v2 backend (Node+TS, dist). Stateless; state in Postgres/Redis.
+// Запуск: npm run backend:build && pm2 start ecosystem.config.cjs
 module.exports = {
   apps: [
     {
       name: 'voice-room',
-      script: 'server/server.js',
-      instances: 1,          // WS + in-memory state → строго 1 инстанс (скейл: Redis PubSub, см. док §11)
+      script: 'backend/dist/server.js',
+      instances: 1,          // 1 на инстанс; горизонталь — за балансером + Redis PubSub (см. BACKEND_INTEGRATION.md §11)
       autorestart: true,
       max_memory_restart: '300M',
-      kill_timeout: 3000,
+      kill_timeout: 5000,
       env: {
         NODE_ENV: 'production',
         PORT: 2021,

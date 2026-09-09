@@ -22,20 +22,22 @@ if ! command -v pm2 >/dev/null 2>&1; then
 fi
 pm2 -v
 
-echo "==> 3/6 зависимости"
+echo "==> 3/7 зависимости (фронт + бэкенд)"
 cd "$APP_DIR"
 npm ci
+npm --prefix backend ci
 
-echo "==> 4/6 сборка фронта"
+echo "==> 4/7 сборка фронта и бэкенда"
 npm run build
+npm --prefix backend run build
 
-echo "==> 5/6 .env"
-if [ ! -f server/.env ]; then
-  cp server/.env.example server/.env
-  echo "    создан server/.env — впиши TURN_*, если нужен NAT-traversal"
+echo "==> 5/7 .env бэкенда"
+if [ ! -f backend/.env ]; then
+  cp backend/.env.example backend/.env
+  echo "    создан backend/.env — впиши JWT_SECRET, LIVEKIT_*, DATABASE_URL/REDIS_URL"
 fi
 
-echo "==> 6/6 запуск pm2"
+echo "==> 6/7 запуск pm2"
 pm2 delete voice-room 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 pm2 save
@@ -56,6 +58,17 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 3600s;                    # WS не рвать по таймауту
+        proxy_send_timeout 3600s;
+    }
+
+    # LiveKit SFU (голос): клиент ходит на wss://домен/livekit
+    location /livekit/ {
+        proxy_pass http://127.0.0.1:7880/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }
 }

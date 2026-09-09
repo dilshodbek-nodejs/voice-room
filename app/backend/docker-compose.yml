@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: voice
+      POSTGRES_PASSWORD: voice
+      POSTGRES_DB: voice_room
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports: ["5432:5432"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  livekit:
+    image: livekit/livekit-server:v1.8
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"     # WebSocket API
+      - "7881:7881"     # RTC TCP
+      - "7882:7882/udp" # RTC UDP + TURN
+    depends_on: [redis]
+
+  coturn:
+    image: coturn/coturn:4.6
+    command:
+      - -n
+      - --listening-port=3478
+      - --min-port=49152
+      - --max-port=65535
+      - --realm=voice-room
+      - --lt-cred-mech
+      - --user=voice-room:$${TURN_PASS:-change-me}
+      - --no-cli
+      - --no-loopback-peers
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-65535:49152-65535/udp"
+    environment:
+      - TURN_PASS=${TURN_PASS:-change-me}
+
+  backend:
+    build: .
+    environment:
+      PORT: 2021
+      DATABASE_URL: postgres://voice:voice@postgres:5432/voice_room
+      REDIS_URL: redis://redis:6379
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-change-me-livekit-secret}
+    ports: ["2021:2021"]
+    depends_on: [postgres, redis, livekit]
+
+volumes:
+  pgdata:

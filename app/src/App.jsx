@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { config } from './config.js';
 import { useRoomCode, useToast, vibrate } from './hooks.js';
 import { createRealtime } from './realtime.js';
-import { createVoice } from './webrtc.js';
+import { createSfu } from './sfu.js';
 import { Toast, TopBar } from './components/Chrome.jsx';
 import { JoinView } from './components/JoinView.jsx';
 import { RoomView } from './components/RoomView.jsx';
@@ -30,9 +30,8 @@ export default function App() {
   const [latency, setLatency] = useState(0);
 
   const rtRef = useRef(null);
-  const voiceRef = useRef(null);
+  const sfuRef = useRef(null);
   const meIdRef = useRef(null);
-  const voiceReadyRef = useRef(null);
   const energyRef = useRef(0);
   const mutedIdsRef = useRef(new Set());
   const chatOpenRef = useRef(false);
@@ -111,8 +110,10 @@ export default function App() {
   const teardown = useCallback(() => {
     clearTimeout(reconnectTimerRef.current);
     reconnectTimerRef.current = null;
-    voiceRef.current?.destroy();
-    voiceRef.current = null;
+    try {
+      sfuRef.current?.disconnect();
+    } catch (_) {}
+    sfuRef.current = null;
     if (rtRef.current?.pingLoop) clearInterval(rtRef.current.pingLoop);
     rtRef.current?.close();
     rtRef.current = null;
@@ -127,14 +128,16 @@ export default function App() {
       intentionalCloseRef.current = true;
       sessionTokenRef.current += 1;
       clearTimeout(reconnectTimerRef.current);
-      voiceRef.current?.destroy();
+      try {
+        sfuRef.current?.disconnect();
+      } catch (_) {}
       if (rtRef.current?.pingLoop) clearInterval(rtRef.current.pingLoop);
       rtRef.current?.close();
     },
     []
   );
 
-  // --- realtime + voice: старт после «ВОЙТИ» (жест пользователя → можно getUserMedia) ---
+  // --- realtime + SFU voice: старт после «ВОЙТИ» (жест → AudioContext не suspend) ---
   const startSession = useCallback(
     (name) => {
       const token = ++sessionTokenRef.current;
@@ -143,27 +146,18 @@ export default function App() {
       clearTimeout(reconnectTimerRef.current);
       teardown();
 
-      const voice = createVoice({
-        onSpeaking: (ids) => setSpeaking(ids.filter((id) => !mutedIdsRef.current.has(id))),
+      // SFU-хелпер создаём синхронно в жесте (AudioContext), коннект — по событию 'sfu'.
+      const sfu = createSfu({
+        onSpeakers: (ids) => setSpeaking(ids.filter((id) => !mutedIdsRef.current.has(id))),
         onEnergy: (e) => (energyRef.current = e),
-        onError: (m) => showToast(m),
-        onConnection: (peerId, state) => {
-          if (state === 'connected') {
-            showToast('ГОЛОСОВАЯ СВЯЗЬ УСТАНОВЛЕНА');
-          }
-          if (state === 'disconnected') {
-            showToast('СВЯЗЬ ПРЕРВАНА · ПЕРЕПОДКЛЮЧЕНИЕ');
-          }
+        onError: (m) => {
+          showToast(m);
+          if (m.indexOf('МИК') === 0) setMicOn(false);
         },
       });
-      voiceRef.current = voice;
-      voice.setSend((obj) => rtRef.current?.send(obj));
+      sfuRef.current = sfu;
       micOnRef.current = true;
       setMicOn(true);
-      voiceReadyRef.current = voice.init().then((ok) => {
-        if (!ok) setMicOn(false); // микродоступ запрещён → честный бейдж МУТ
-        return ok;
-      });
 
       rtRef.current = createRealtime({
         name,
@@ -195,45 +189,39 @@ export default function App() {
           switch (msg.t) {
             case 'roster': {
               meIdRef.current = msg.you.id;
-              voice.setMeId(msg.you.id);
-              voice.setIce(msg.iceServers);
               const roster = [{ ...msg.you, you: true }, ...msg.peers];
               mutedIdsRef.current = new Set(roster.filter((m) => m.muted).map((m) => m.id));
-              roster.forEach((m) => voice.setPeerMuted(m.id, !!m.muted));
               setMembers(roster);
               setSpeaking([]);
-              // Новичок только отвечает на offers (старые пиры офферят через peer-joined).
-              voiceReadyRef.current?.then(() => voice.attachLocal());
+              break;
+            }
+            case 'sfu': {
+              // Креды SFU от бэкенда → подключаем голос (аудио идёт клиент↔SFU).
+              if (msg.url && msg.token && sfuRef.current) {
+                sfuRef.current
+                  .connect(msg.url, msg.token)
+                  .then((res) => {
+                    if (res && res.mic === false) setMicOn(false);
+                    else showToast('ГОЛОСОВАЯ СВЯЗЬ УСТАНОВЛЕНА');
+                  })
+                  .catch(() => showToast('ГОЛОС НЕ ПОДКЛЮЧИЛСЯ'));
+              }
               break;
             }
             case 'peer-joined': {
               setMembers((prev) => [...prev, msg.peer]);
-              voice.setPeerMuted(msg.peer.id, !!msg.peer.muted);
               if (msg.peer.muted) mutedIdsRef.current.add(msg.peer.id);
               showToast('ПРИСОЕДИНИЛСЯ · ' + (msg.peer.name || '').toUpperCase());
-              // старый пир → офферим новичку (deterministic)
-              voiceReadyRef.current?.then(() => voice.offerTo(msg.peer.id));
               break;
             }
-            // WebRTC сигналинг (relay с сервера) — БЕЗ ЭТОГО МЕШ НЕ СОБИРАЕТСЯ
-            case 'offer':
-              voiceReadyRef.current?.then(() => voice.handleOffer(msg));
-              break;
-            case 'answer':
-              voiceReadyRef.current?.then(() => voice.handleAnswer(msg));
-              break;
-            case 'ice':
-              voice.handleIce(msg); // ранние кандидаты буферизуются внутри (pendingIce)
-              break;
             case 'peer-left': {
               setMembers((prev) => prev.filter((m) => m.id !== msg.peerId));
-              voice.closePeer(msg.peerId);
+              setSpeaking((prev) => prev.filter((id) => id !== msg.peerId));
               break;
             }
             case 'peer-state':
               if (msg.muted) mutedIdsRef.current.add(msg.peerId);
               else mutedIdsRef.current.delete(msg.peerId);
-              voice.setPeerMuted(msg.peerId, msg.muted);
               setMembers((prev) =>
                 prev.map((m) => (m.id === msg.peerId ? { ...m, muted: msg.muted } : m))
               );
@@ -300,13 +288,13 @@ export default function App() {
     startSession(finalName);
   }, [nameInput, showToast, startSession]);
 
-  // --- мик ---
+  // --- мик (SFU публикация + серверный мут для остальных) ---
   const micOnRef = useRef(true);
-  const toggleMic = useCallback(() => {
-    if (!voiceRef.current) return;
+  const toggleMic = useCallback(async () => {
+    if (!sfuRef.current) return;
     const next = !micOnRef.current;
     const muted = !next;
-    const ok = voiceRef.current.toggleMute(muted);
+    const ok = await sfuRef.current.setMicrophoneEnabled(next);
     if (!ok) {
       showToast('НЕТ МИКРОФОНА');
       return;

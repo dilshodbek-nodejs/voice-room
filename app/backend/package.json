@@ -1,0 +1,45 @@
+{
+  "name": "voice-room-backend",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Voice Room application backend: REST + JWT auth + rooms/roles + LiveKit SFU tokens + realtime WS hub + webhooks. Stateless; state in Postgres/Redis.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.9.0",
+    "pg": "^8.13.1",
+    "prom-client": "^15.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.0",
+    "@types/supertest": "^6.0.2",
+    "@types/ws": "^8.5.13",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
+  }
+}

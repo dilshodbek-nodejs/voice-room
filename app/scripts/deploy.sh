@@ -8,11 +8,16 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 echo "==> git pull"
 git pull --ff-only
 
-echo "==> зависимости"
+echo "==> зависимости (фронт + бэкенд)"
 npm ci
+npm --prefix backend ci
 
-echo "==> сборка"
+echo "==> тесты бэкенда"
+npm --prefix backend test
+
+echo "==> сборка (фронт + бэкенд)"
 npm run build
+npm --prefix backend run build
 
 echo "==> перезапуск (zero-downtime reload)"
 pm2 reload voice-room --update-env
